@@ -14,6 +14,7 @@ import os
 import sys
 import traceback
 import zipfile
+import re
 from typing import List, Tuple
 
 import click
@@ -328,7 +329,7 @@ def upload_files(  # noqa: C901
     \t $ reana-client upload -w myanalysis.42 \n
     \t $ reana-client upload -w myanalysis.42 code/mycode.py
     """
-    from reana_client.api.client import get_workflow_specification, upload_to_server
+    from reana_client.api.client import get_workflow_specification, upload_to_server, fetch_rucio_files_to_server
 
     logging.debug("command: {}".format(ctx.command_path.replace(" ", ".")))
     for p in ctx.params:
@@ -437,6 +438,41 @@ def upload_files(  # noqa: C901
             upload_failed = True
     if upload_failed:
         sys.exit(1)
+
+    rucio_dids = reana_spec["inputs"].get("rucio_dids")
+
+    filtered_dids = []
+    for rucio_did in rucio_dids:
+        try:
+            m = re.search(r'^([a-zA-Z0-9_.-]*):([a-zA-Z0-9_.-]*)$', rucio_did)
+            scope = m.group(1)
+            filename = m.group(2)
+            # scope and filename not used - just for exception handling
+            filtered_dids.append(rucio_did)
+        except Exception as e:
+            logging.debug(traceback.format_exc())
+            logging.debug(str(e))
+            display_message(
+                "Invalid DID format for '{}'".format(rucio_did),
+                msg_type="error",
+            )
+
+    try:
+        fetch_rucio_files_to_server(workflow, rucio_dids, access_token)
+    except Exception as e:
+        logging.debug(traceback.format_exc())
+        logging.debug(str(e))
+        display_message(
+            "Something went wrong while fetching Rucio files: \n"
+            "{}".format(str(e)),
+            msg_type="error",
+        )
+        sys.exit(1)
+
+    display_message(
+        "DID(s) was successfully fetched.",
+        msg_type="success",
+    )
 
 
 @files_group.command("rm")

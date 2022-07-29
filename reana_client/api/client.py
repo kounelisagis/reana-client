@@ -616,6 +616,61 @@ def upload_to_server(workflow, paths, access_token):
                     raise e
 
 
+def fetch_rucio_files_to_server(workflow, rucio_dids, access_token):
+    """Fetch files from Rucio to REANA server.
+
+    Shared e.g. by `code upload` and `inputs upload`.
+
+    :param workflow: name or id of workflow whose workspace should be
+        used to store the files.
+    :param rucio_dids: the Rucio DID(s) of files to be uploaded.
+    :param access_token: access token of the current user.
+    """
+    from reana_client.utils import get_api_url
+
+    if not workflow:
+        raise ValueError("Workflow name or id must be provided")
+    if not rucio_dids:
+        logging.info(
+            "No DID(s) of Rucio file(s) that should be fetched to workspace was provided."
+        )
+        return []
+
+    logging.info('Workflow "{}" selected'.format(workflow))
+
+    try:
+        endpoint = current_rs_api_client.api.fetch_rucio_files.operation.path_name.format(
+            workflow_id_or_name=workflow
+        )
+
+        http_response = requests.post(
+            urljoin(get_api_url(), endpoint),
+            data=json.dumps(rucio_dids),
+            params={"access_token": access_token},
+            headers={"Content-Type": "application/octet-stream"},
+            verify=False,
+        )
+        if http_response.ok:
+            return http_response
+        raise Exception(http_response.json().get("message"))
+    except requests.exceptions.ConnectionError:
+        logging.debug("Rucio DID(s) could not be fetched.", exc_info=True)
+        raise Exception("Could not connect to the server {}".format(get_api_url()))
+    except requests.exceptions.HTTPError as e:
+        logging.debug("The server responded with an HTTP error code.", exc_info=True)
+        raise Exception("Unexpected response from the server: \n{}".format(e.response))
+    except requests.exceptions.Timeout:
+        logging.debug("Timeout while trying to establish connection.", exc_info=True)
+        raise Exception("The request to the server has timed out.")
+    except requests.exceptions.RequestException:
+        logging.debug(
+            "Something went wrong while connecting to the server.", exc_info=True
+        )
+        raise Exception("The request to the server has failed for an unknown reason.")
+    except Exception as e:
+        raise e
+    
+
 def get_workflow_parameters(workflow, access_token):
     """Get parameters of previously created workflow."""
     try:
